@@ -1,0 +1,78 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-3/providers/microsoft.insights/components/appi-example/providers/Microsoft.Authorization/roleAssignmentScheduleInstances/00000000-0000-0000-0000-000000000010",
+      "name": "00000000-0000-0000-0000-000000000010",
+      "properties": {
+        "assignmentType": "Assigned",
+        "createdOn": "2023-02-28T12:07:08.1313784Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example Group",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000003",
+            "type": "Group"
+          },
+          "roleDefinition": {
+            "displayName": "Log Analytics Reader",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000011",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "appi-example",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-3/providers/microsoft.insights/components/appi-example",
+            "type": "microsoft.insights/components"
+          }
+        },
+        "memberType": "Group",
+        "originRoleAssignmentId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-3/providers/microsoft.insights/components/appi-example/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000010",
+        "principalId": "00000000-0000-0000-0000-000000000003",
+        "principalType": "Group",
+        "roleAssignmentScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-3/providers/microsoft.insights/components/appi-example/providers/Microsoft.Authorization/roleAssignmentSchedules/00000000-0000-0000-0000-000000000010",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000011",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-3/providers/microsoft.insights/components/appi-example",
+        "startDateTime": "2023-02-28T12:07:08.1313784Z",
+        "status": "Provisioned"
+      },
+      "type": "Microsoft.Authorization/roleAssignmentScheduleInstances"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000001/RESOURCEGROUPS/RG-EXAMPLE-1/providers/Microsoft.Authorization/roleAssignmentScheduleInstances/00000000-0000-0000-0000-0000000000ad",
+      "name": "00000000-0000-0000-0000-0000000000ad",
+      "properties": {
+        "assignmentType": "Activated",
+        "createdOn": "2023-02-28T12:07:08.1313784Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example User",
+            "email": "user@example.com",
+            "id": "00000000-0000-0000-0000-0000000000aa",
+            "type": "User"
+          },
+          "roleDefinition": {
+            "displayName": "Contributor",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "rg-example-1",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1",
+            "type": "resourcegroup"
+          }
+        },
+        "memberType": "Direct",
+        "originRoleAssignmentId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-0000000000ac",
+        "principalId": "00000000-0000-0000-0000-0000000000aa",
+        "principalType": "User",
+        "roleAssignmentScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleAssignmentSchedules/00000000-0000-0000-0000-0000000000ab",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000001/RESOURCEGROUPS/RG-EXAMPLE-1",
+        "startDateTime": "2026-10-03T08:00:00.1234567Z",
+        "status": "Provisioned",
+        "endDateTime": "2026-10-03T16:00:00.1234567Z",
+        "linkedRoleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000002"
+      },
+      "type": "Microsoft.Authorization/roleAssignmentScheduleInstances"
+    }
+  ]
+}

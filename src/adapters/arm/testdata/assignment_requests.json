@@ -1,0 +1,94 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000006/resourceGroups/rg-example-4/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/00000000-0000-0000-0000-000000000012",
+      "name": "00000000-0000-0000-0000-000000000012",
+      "properties": {
+        "createdOn": "2026-08-20T10:30:38.707Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example User",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000008",
+            "type": "User",
+            "userPrincipalName": "user@example.com"
+          },
+          "roleDefinition": {
+            "displayName": "Contributor",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "rg-example-4",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000006/resourceGroups/rg-example-4",
+            "type": "resourcegroup"
+          }
+        },
+        "justification": "Investigating example issue",
+        "linkedRoleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000006/resourceGroups/rg-example-4/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000013",
+        "principalId": "00000000-0000-0000-0000-000000000008",
+        "principalType": "User",
+        "requestType": "SelfActivate",
+        "requestorId": "00000000-0000-0000-0000-000000000008",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+        "scheduleInfo": {
+          "expiration": {
+            "duration": "PT8H",
+            "type": "AfterDuration"
+          },
+          "startDateTime": "2026-08-20T10:30:38.7177115+00:00"
+        },
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000006/resourceGroups/rg-example-4",
+        "status": "Provisioned",
+        "targetRoleAssignmentScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000006/resourceGroups/rg-example-4/providers/Microsoft.Authorization/roleAssignmentSchedules/00000000-0000-0000-0000-000000000012",
+        "ticketInfo": {}
+      },
+      "type": "Microsoft.Authorization/roleAssignmentScheduleRequests"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/00000000-0000-0000-0000-0000000000ae",
+      "name": "00000000-0000-0000-0000-0000000000ae",
+      "properties": {
+        "createdOn": "2026-10-03T09:00:00.000Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example User",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000008",
+            "type": "User",
+            "userPrincipalName": "user@example.com"
+          },
+          "roleDefinition": {
+            "displayName": "Owner",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000004/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "rg-example-2",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2",
+            "type": "resourcegroup"
+          }
+        },
+        "justification": "Investigating example issue",
+        "linkedRoleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000005",
+        "principalId": "00000000-0000-0000-0000-000000000008",
+        "principalType": "User",
+        "requestType": "SelfActivate",
+        "requestorId": "00000000-0000-0000-0000-000000000008",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000004/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+        "scheduleInfo": {
+          "expiration": {
+            "duration": "PT8H",
+            "type": "AfterDuration"
+          },
+          "startDateTime": "2026-10-03T09:00:00.0000000+00:00"
+        },
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2",
+        "status": "PendingApproval",
+        "targetRoleAssignmentScheduleId": null,
+        "ticketInfo": {}
+      },
+      "type": "Microsoft.Authorization/roleAssignmentScheduleRequests"
+    }
+  ]
+}

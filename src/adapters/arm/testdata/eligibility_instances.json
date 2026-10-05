@@ -1,0 +1,110 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleEligibilityScheduleInstances/00000000-0000-0000-0000-000000000002",
+      "name": "00000000-0000-0000-0000-000000000002",
+      "properties": {
+        "createdOn": "2026-09-08T06:58:03.77Z",
+        "endDateTime": "2027-09-08T06:57:53.62Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example Group",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000003",
+            "type": "Group"
+          },
+          "roleDefinition": {
+            "displayName": "Contributor",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "rg-example-1",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1",
+            "type": "resourcegroup"
+          }
+        },
+        "memberType": "Group",
+        "principalId": "00000000-0000-0000-0000-000000000003",
+        "principalType": "Group",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+        "roleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000002",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1",
+        "startDateTime": "2026-09-08T06:58:03.77Z",
+        "status": "Provisioned"
+      },
+      "type": "Microsoft.Authorization/roleEligibilityScheduleInstances"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2/providers/Microsoft.Authorization/roleEligibilityScheduleInstances/00000000-0000-0000-0000-000000000005",
+      "name": "00000000-0000-0000-0000-000000000005",
+      "properties": {
+        "createdOn": "2026-09-15T12:58:02.783Z",
+        "endDateTime": "2027-09-15T12:57:32.56Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example Group",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000003",
+            "type": "Group"
+          },
+          "roleDefinition": {
+            "displayName": "Owner",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000004/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "rg-example-2",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2",
+            "type": "resourcegroup"
+          }
+        },
+        "memberType": "Group",
+        "principalId": "00000000-0000-0000-0000-000000000003",
+        "principalType": "Group",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000004/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+        "roleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000005",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000004/resourceGroups/rg-example-2",
+        "startDateTime": "2026-09-15T12:58:02.783Z",
+        "status": "Provisioned"
+      },
+      "type": "Microsoft.Authorization/roleEligibilityScheduleInstances"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleEligibilityScheduleInstances/00000000-0000-0000-0000-000000000007",
+      "name": "00000000-0000-0000-0000-000000000007",
+      "properties": {
+        "createdOn": "2026-02-04T14:08:06.767Z",
+        "endDateTime": "2027-02-04T14:07:45.97Z",
+        "expandedProperties": {
+          "principal": {
+            "displayName": "Example User",
+            "email": "",
+            "id": "00000000-0000-0000-0000-000000000008",
+            "type": "User",
+            "userPrincipalName": "user@example.com"
+          },
+          "roleDefinition": {
+            "displayName": "Cosmos DB Account Reader Role",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000009",
+            "type": "BuiltInRole"
+          },
+          "scope": {
+            "displayName": "Example Subscription C",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000006",
+            "type": "subscription"
+          }
+        },
+        "memberType": "Direct",
+        "principalId": "00000000-0000-0000-0000-000000000008",
+        "principalType": "User",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000009",
+        "roleEligibilityScheduleId": "/subscriptions/00000000-0000-0000-0000-000000000006/providers/Microsoft.Authorization/roleEligibilitySchedules/00000000-0000-0000-0000-000000000007",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000006",
+        "startDateTime": "2026-02-04T14:08:06.767Z",
+        "status": "Provisioned"
+      },
+      "type": "Microsoft.Authorization/roleEligibilityScheduleInstances"
+    }
+  ]
+}

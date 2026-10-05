@@ -1,0 +1,29 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000001",
+      "subscriptionId": "00000000-0000-0000-0000-000000000001",
+      "tenantId": "00000000-0000-0000-0000-0000000000ff",
+      "displayName": "Example Subscription A",
+      "state": "Enabled"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000004",
+      "subscriptionId": "00000000-0000-0000-0000-000000000004",
+      "tenantId": "00000000-0000-0000-0000-0000000000ff",
+      "displayName": "Example Subscription B",
+      "state": "Enabled"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000006",
+      "subscriptionId": "00000000-0000-0000-0000-000000000006",
+      "tenantId": "00000000-0000-0000-0000-0000000000ff",
+      "displayName": "Example Subscription C",
+      "state": "Enabled"
+    }
+  ],
+  "count": {
+    "type": "Total",
+    "value": 3
+  }
+}

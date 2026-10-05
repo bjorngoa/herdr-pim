@@ -1,0 +1,64 @@
+{
+  "value": [
+    {
+      "properties": {
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1",
+        "roleDefinitionId": "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+        "policyId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleManagementPolicies/00000000-0000-0000-0000-0000000000b1",
+        "effectiveRules": [
+          {
+            "isExpirationRequired": true,
+            "maximumDuration": "P365D",
+            "id": "Expiration_Admin_Eligibility",
+            "ruleType": "RoleManagementPolicyExpirationRule",
+            "target": { "caller": "Admin", "operations": ["All"], "level": "Eligibility" }
+          },
+          {
+            "isExpirationRequired": true,
+            "maximumDuration": "PT4H",
+            "id": "Expiration_EndUser_Assignment",
+            "ruleType": "RoleManagementPolicyExpirationRule",
+            "target": { "caller": "EndUser", "operations": ["All"], "level": "Assignment" }
+          },
+          {
+            "enabledRules": ["Justification", "MultiFactorAuthentication"],
+            "id": "Enablement_EndUser_Assignment",
+            "ruleType": "RoleManagementPolicyEnablementRule",
+            "target": { "caller": "EndUser", "operations": ["All"], "level": "Assignment" }
+          },
+          {
+            "setting": {
+              "isApprovalRequired": false,
+              "isApprovalRequiredForExtension": false,
+              "isRequestorJustificationRequired": true,
+              "approvalMode": "SingleStage",
+              "approvalStages": []
+            },
+            "id": "Approval_EndUser_Assignment",
+            "ruleType": "RoleManagementPolicyApprovalRule",
+            "target": { "caller": "EndUser", "operations": ["All"], "level": "Assignment" }
+          },
+          {
+            "isEnabled": false,
+            "claimValue": "",
+            "id": "AuthenticationContext_EndUser_Assignment",
+            "ruleType": "RoleManagementPolicyAuthenticationContextRule",
+            "target": { "caller": "EndUser", "operations": ["All"], "level": "Assignment" }
+          },
+          {
+            "notificationType": "Email",
+            "recipientType": "Requestor",
+            "isDefaultRecipientsEnabled": true,
+            "notificationLevel": "All",
+            "id": "Notification_Requestor_EndUser_Assignment",
+            "ruleType": "RoleManagementPolicyNotificationRule",
+            "target": { "caller": "EndUser", "operations": ["All"], "level": "Assignment" }
+          }
+        ]
+      },
+      "name": "00000000-0000-0000-0000-0000000000b2",
+      "type": "Microsoft.Authorization/RoleManagementPolicyAssignment",
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-example-1/providers/Microsoft.Authorization/roleManagementPolicyAssignments/00000000-0000-0000-0000-0000000000b2"
+    }
+  ]
+}
