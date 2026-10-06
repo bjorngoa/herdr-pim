@@ -26,6 +26,7 @@ const Allocator = std.mem.Allocator;
 pub const Options = struct {
     default_duration_min: u32,
     initial_filter: []const u8 = "",
+    progress_window: bool = false,
 };
 
 const settle_timeout_s = 120;
@@ -114,7 +115,7 @@ const App = struct {
     /// which case the caller still owns the arguments.
     fn spawn(app: *App, m: *Model, comptime function: anytype, args: anytype) bool {
         app.group.concurrent(app.io, function, args) catch {
-            m.busy = null;
+            m.endOperation();
             m.refreshing = false;
             m.setNotice(.failed, "Could not start a background task.");
             return false;
@@ -130,11 +131,15 @@ const App = struct {
             .quit => return true,
             .refresh => _ = app.spawn(m, refreshTask, .{app}),
             .load_policies => |targets| if (!app.spawn(m, policiesTask, .{ app, targets, m.default_duration_min })) app.gpa.free(targets),
-            .activate => |job| if (!app.spawn(m, activateTask, .{ app, job })) {
+            .activate => |job| if (app.spawn(m, activateTask, .{ app, job })) {
+                m.busy_since = app.now();
+            } else {
                 app.gpa.free(job.targets);
                 app.gpa.free(job.justification);
             },
-            .deactivate => |targets| if (!app.spawn(m, deactivateTask, .{ app, targets })) app.gpa.free(targets),
+            .deactivate => |targets| if (app.spawn(m, deactivateTask, .{ app, targets })) {
+                m.busy_since = app.now();
+            } else app.gpa.free(targets),
         }
         return false;
     }
@@ -293,7 +298,7 @@ fn problemLine(arena: Allocator, what: []const u8, err: errors.Error, diag: sess
 
 fn tickTask(app: *App) std.Io.Cancelable!void {
     while (true) {
-        try app.io.sleep(.fromSeconds(1), .awake);
+        try app.io.sleep(.fromMilliseconds(model_mod.tick_ms), .awake);
         app.loop.postEvent(.tick) catch return;
     }
 }
@@ -324,6 +329,7 @@ pub fn run(gpa: Allocator, io: std.Io, environ: *std.process.Environ.Map, sessio
     var model: Model = .init(gpa, opts.default_duration_min);
     defer model.deinit();
     model.filter.set(opts.initial_filter);
+    model.progress_window = opts.progress_window;
 
     var app: App = .{ .gpa = gpa, .io = io, .session = session, .loop = &loop };
     defer app.deinit();
@@ -348,7 +354,7 @@ pub fn run(gpa: Allocator, io: std.Io, environ: *std.process.Environ.Map, sessio
                 if (app.perform(&model, try model.update(input))) break;
             },
             .winsize => |ws| try vx.resize(gpa, out, ws),
-            .tick => model.tick(),
+            .tick => if (!model.tick()) continue,
             else => try app.handle(&model, event),
         }
         app.collect(&model);

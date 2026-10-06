@@ -4,6 +4,7 @@ const build_options = @import("build_options");
 const args = @import("cli/args.zig");
 const commands = @import("cli/commands.zig");
 const paths = @import("platform/paths.zig");
+const env = @import("platform/env.zig");
 const session_mod = @import("app/session.zig");
 const log = @import("platform/log.zig");
 const tui = @import("tui/app.zig");
@@ -126,6 +127,7 @@ fn runPicker(init: std.process.Init, session: *session_mod.Session, opts: args.P
     tui.run(init.gpa, init.io, init.environ_map, session, .{
         .default_duration_min = opts.duration_min,
         .initial_filter = filter,
+        .progress_window = env.enabled(init.environ_map, env.progress_window),
     }) catch |err| {
         stderr.print("pim: the picker failed ({t}).\n", .{err}) catch {};
         return exit_failure;
@@ -162,6 +164,7 @@ test {
     _ = @import("domain/alerts.zig");
     _ = @import("app/alerts_service.zig");
     _ = @import("platform/paths.zig");
+    _ = @import("platform/env.zig");
     _ = @import("platform/deadline.zig");
     _ = @import("app/snapshot_service.zig");
     _ = @import("app/session.zig");

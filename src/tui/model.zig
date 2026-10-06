@@ -30,7 +30,11 @@ pub const Input = union(enum) {
     refresh,
 };
 
-pub const Mode = enum { browse, form, confirm_deactivate };
+pub const Mode = enum { browse, form, confirm_deactivate, progress };
+
+/// Animation clock. The screen only redraws this often while something moves.
+pub const tick_ms = 50;
+pub const ticks_per_second = 1000 / tick_ms;
 
 pub const Field = enum { justification, duration };
 
@@ -108,6 +112,9 @@ pub const Notice = struct {
 pub const Model = struct {
     gpa: Allocator,
     default_duration_min: u32,
+    /// Opt-in: a progress window and faster animations while an operation
+    /// runs. Off, only the header shows a spinner.
+    progress_window: bool = false,
 
     /// Borrowed from the app's current snapshot.
     rows: []const Row = &.{},
@@ -115,6 +122,10 @@ pub const Model = struct {
     refreshing: bool = false,
     /// Static label of the running operation.
     busy: ?[]const u8 = null,
+    /// When the running operation started, in seconds; set by the app.
+    busy_since: i64 = 0,
+    /// Rows of the running operation. Owned; strings borrowed like `targets`.
+    working: []Row = &.{},
 
     filter: TextField = .{},
     /// Indices into `rows` that match `filter`.
@@ -148,6 +159,7 @@ pub const Model = struct {
         m.clearSelection();
         m.selected.deinit(m.gpa);
         m.gpa.free(m.targets);
+        m.gpa.free(m.working);
     }
 
     // ---- queries -----------------------------------------------------------
@@ -159,6 +171,14 @@ pub const Model = struct {
 
     pub fn isSelected(m: *const Model, row: Row) bool {
         return m.selected.contains(row.eligibility.schedule_id);
+    }
+
+    /// Whether the running operation changes `row`.
+    pub fn isWorking(m: *const Model, row: Row) bool {
+        for (m.working) |w| {
+            if (std.mem.eql(u8, w.eligibility.schedule_id, row.eligibility.schedule_id)) return true;
+        }
+        return false;
     }
 
     /// Unknown policies (not yet loaded or unreadable) count as requiring one.
@@ -217,8 +237,16 @@ pub const Model = struct {
     }
 
     pub fn setResults(m: *Model, lines: []const messages.Line) void {
-        m.busy = null;
+        m.endOperation();
         m.results = lines;
+    }
+
+    /// Clears the running operation and closes its progress view.
+    pub fn endOperation(m: *Model) void {
+        m.busy = null;
+        m.gpa.free(m.working);
+        m.working = &.{};
+        if (m.mode == .progress) m.mode = .browse;
     }
 
     pub fn setPageSize(m: *Model, n: usize) void {
@@ -226,8 +254,11 @@ pub const Model = struct {
         m.ensureCursorVisible();
     }
 
-    pub fn tick(m: *Model) void {
+    /// Advances animations; returns whether the screen needs redrawing.
+    pub fn tick(m: *Model) bool {
         m.ticks +%= 1;
+        const animating = m.progress_window and (m.busy != null or m.refreshing);
+        return animating or m.ticks % ticks_per_second == 0;
     }
 
     // ---- input -------------------------------------------------------------
@@ -239,6 +270,7 @@ pub const Model = struct {
             .browse => m.updateBrowse(input),
             .form => m.updateForm(input),
             .confirm_deactivate => m.updateConfirm(input),
+            .progress => m.updateProgress(input),
         };
     }
 
@@ -315,11 +347,14 @@ pub const Model = struct {
         return .none;
     }
 
+    /// The operation keeps running; escape only hides its progress view.
+    fn updateProgress(m: *Model, input: Input) Effect {
+        if (input == .escape) m.mode = .browse;
+        return .none;
+    }
+
     fn beginActivate(m: *Model) Allocator.Error!Effect {
-        if (m.busy != null) {
-            m.setNotice(.info, "Wait for the current operation to finish.");
-            return .none;
-        }
+        if (m.busy != null) return m.showBusy();
         const targets = try m.collectTargets(.eligible);
         if (targets.len == 0) {
             m.gpa.free(targets);
@@ -338,10 +373,7 @@ pub const Model = struct {
     }
 
     fn beginDeactivate(m: *Model) Allocator.Error!Effect {
-        if (m.busy != null) {
-            m.setNotice(.info, "Wait for the current operation to finish.");
-            return .none;
-        }
+        if (m.busy != null) return m.showBusy();
         const targets = try m.collectTargets(.active);
         if (targets.len == 0) {
             m.gpa.free(targets);
@@ -364,6 +396,8 @@ pub const Model = struct {
             m.setNotice(.failed, "A justification is required.");
             return .none;
         }
+        const working = try m.gpa.dupe(Row, m.targets);
+        errdefer m.gpa.free(working);
         const job: ActivateJob = .{
             .targets = m.targets,
             .duration_min = minutes,
@@ -372,17 +406,32 @@ pub const Model = struct {
         m.targets = &.{};
         m.closeOverlay();
         m.clearSelection();
-        m.busy = "Activating";
+        m.beginOperation("Activating", working);
         return .{ .activate = job };
     }
 
-    fn submitDeactivate(m: *Model) Effect {
+    fn submitDeactivate(m: *Model) Allocator.Error!Effect {
+        const working = try m.gpa.dupe(Row, m.targets);
         const targets = m.targets;
         m.targets = &.{};
         m.closeOverlay();
         m.clearSelection();
-        m.busy = "Deactivating";
+        m.beginOperation("Deactivating", working);
         return .{ .deactivate = targets };
+    }
+
+    fn beginOperation(m: *Model, label: []const u8, working: []Row) void {
+        m.busy = label;
+        m.gpa.free(m.working);
+        m.working = working;
+        if (m.progress_window) m.mode = .progress;
+    }
+
+    /// Explains the wait and brings back the progress view, if enabled.
+    fn showBusy(m: *Model) Effect {
+        m.setNotice(.info, "Wait for the current operation to finish.");
+        if (m.progress_window) m.mode = .progress;
+        return .none;
     }
 
     fn closeOverlay(m: *Model) void {
@@ -657,6 +706,89 @@ test "busy operations block new ones" {
     defer m.deinit();
     m.busy = "Activating";
     try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "with the progress window, busy operations bring it back" {
+    var m = try loaded();
+    defer m.deinit();
+    m.progress_window = true;
+    m.busy = "Activating";
+    try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(Mode.progress, m.mode);
+    try testing.expect(m.notice != null);
+}
+
+test "progress view lasts until results arrive and escape only hides it" {
+    var m = try loaded();
+    defer m.deinit();
+    m.progress_window = true;
+    const open = try press(&m, .enter);
+    defer freeEffect(open);
+    _ = try press(&m, .{ .text = "deploy" });
+    const submit = try press(&m, .enter);
+    defer freeEffect(submit);
+    try testing.expectEqual(Mode.progress, m.mode);
+    try testing.expect(m.isWorking(fixture[0]));
+    try testing.expect(!m.isWorking(fixture[1]));
+
+    try testing.expectEqual(Effect.none, try press(&m, .down));
+    try testing.expectEqual(@as(usize, 0), m.cursor);
+    try testing.expectEqual(Effect.none, try press(&m, .escape));
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expect(m.busy != null);
+
+    m.setResults(&.{});
+    try testing.expect(m.busy == null);
+    try testing.expectEqual(@as(usize, 0), m.working.len);
+    try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "results close a visible progress view" {
+    var m = try loaded();
+    defer m.deinit();
+    m.progress_window = true;
+    _ = try press(&m, .{ .text = "prod" });
+    _ = try press(&m, .deactivate);
+    const effect = try press(&m, .enter);
+    defer freeEffect(effect);
+    try testing.expectEqual(Mode.progress, m.mode);
+    try testing.expect(m.isWorking(fixture[2]));
+    m.setResults(&.{});
+    try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "ticks redraw about once a second unless the progress window animates" {
+    var m = try loaded();
+    defer m.deinit();
+    m.busy = "Activating";
+    m.refreshing = true;
+    var redraws: usize = 0;
+    for (0..ticks_per_second * 3) |_| redraws += @intFromBool(m.tick());
+    try testing.expectEqual(@as(usize, 3), redraws);
+
+    m.progress_window = true;
+    try testing.expect(m.tick());
+    m.busy = null;
+    try testing.expect(m.tick());
+    m.refreshing = false;
+    redraws = 0;
+    for (0..ticks_per_second) |_| redraws += @intFromBool(m.tick());
+    try testing.expectEqual(@as(usize, 1), redraws);
+}
+
+test "without the progress window an operation keeps the list in view" {
+    var m = try loaded();
+    defer m.deinit();
+    const open = try press(&m, .enter);
+    defer freeEffect(open);
+    _ = try press(&m, .{ .text = "deploy" });
+    const submit = try press(&m, .enter);
+    defer freeEffect(submit);
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expectEqualStrings("Activating", m.busy.?);
+    m.setResults(&.{});
+    try testing.expect(m.busy == null);
     try testing.expectEqual(Mode.browse, m.mode);
 }
 
