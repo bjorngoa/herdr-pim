@@ -97,8 +97,10 @@ Run `pim help` for every option.
 | ctrl-d | deactivate the selected or current active roles (asks for confirmation) |
 | ctrl-r | refresh from Azure |
 | ctrl-w, ctrl-u | delete a word, clear the input |
-| esc | clear the filter, then the selection, then quit (closes the form) |
+| esc | clear the filter, then the selection, then quit (closes the form; hides the progress window while the operation keeps running) |
 | ctrl-c | quit |
+
+While an activation or deactivation runs, a progress window shows the roles, a progress bar and the elapsed time, and the affected rows show a spinner. Pressing enter or ctrl-d while it runs brings the window back.
 
 ## herdr integration
 

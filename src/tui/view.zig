@@ -23,8 +23,13 @@ const style_title: Style = .{ .bold = true, .reverse = true };
 const style_dim: Style = .{ .dim = true };
 const style_bold: Style = .{ .bold = true };
 const style_selected: Style = .{ .fg = .{ .index = 6 }, .bold = true };
+const style_working: Style = .{ .fg = .{ .index = 3 }, .bold = true };
+const style_busy: Style = .{ .fg = accent, .bold = true };
 
 const spinner = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+const spinner_ticks = 100 / model_mod.tick_ms;
+/// One pass of the progress bar sweep.
+const sweep_ticks = 2400 / model_mod.tick_ms;
 
 const header_rows = 3;
 const max_result_lines = 4;
@@ -50,6 +55,7 @@ pub fn draw(arena: Allocator, win: Window, m: *Model, now: i64) Allocator.Error!
         .browse => {},
         .form => try drawForm(arena, win, m),
         .confirm_deactivate => try drawConfirm(arena, win, m),
+        .progress => try drawProgress(arena, win, m, now),
     }
 }
 
@@ -70,15 +76,15 @@ fn drawHeader(arena: Allocator, win: Window, m: *const Model, now: i64) Allocato
     }
 
     const right = if (m.busy) |label|
-        try std.fmt.allocPrint(arena, "{s} {s}… ", .{ spinner[m.ticks % spinner.len], label })
+        try std.fmt.allocPrint(arena, "{s} {s} · {s} ", .{ spinnerFrame(m), label, try clock(arena, now - m.busy_since) })
     else if (m.refreshing)
-        try std.fmt.allocPrint(arena, "{s} refreshing ", .{spinner[m.ticks % spinner.len]})
+        try std.fmt.allocPrint(arena, "{s} refreshing ", .{spinnerFrame(m)})
     else if (m.fetched_at) |at|
         try updatedAgo(arena, now - at)
     else
         "";
     const width: u16 = @intCast(text.displayWidth(right));
-    if (width < win.width) _ = print(win, 0, win.width - width, right, style_dim);
+    if (width < win.width) _ = print(win, 0, win.width - width, right, if (m.busy != null) style_busy else style_dim);
 }
 
 fn updatedAgo(arena: Allocator, age: i64) Allocator.Error![]const u8 {
@@ -156,7 +162,9 @@ fn drawList(arena: Allocator, win: Window, m: *const Model, now: i64) Allocator.
             _ = print(line, 0, 0, "▌", .{ .fg = accent, .bg = base.bg });
         }
         if (m.isSelected(r)) _ = print(line, 0, 2, "✓", merge(base, style_selected));
-        _ = print(line, 0, 4, stateGlyph(r.state), merge(base, stateStyle(r.state)));
+        if (m.isWorking(r)) {
+            _ = print(line, 0, 4, spinnerFrame(m), merge(base, style_working));
+        } else _ = print(line, 0, 4, stateGlyph(r.state), merge(base, stateStyle(r.state)));
 
         try cell(arena, line, x_role, cols.role, r.eligibility.role_name, base);
         try cell(arena, line, x_scope, cols.scope, r.eligibility.scope_name, base);
@@ -185,6 +193,7 @@ fn drawFooter(arena: Allocator, win: Window, m: *const Model) Allocator.Error!vo
         .browse => "↑↓ move · tab select · enter activate · ^d deactivate · ^r refresh · esc quit",
         .form => "enter submit · tab switch field · esc cancel",
         .confirm_deactivate => "y/enter confirm · n/esc cancel",
+        .progress => "esc hide (keeps running) · ^c quit",
     };
     _ = print(win, y, 1, try text.truncate(arena, help, win.width -| 2), style_dim);
 }
@@ -240,6 +249,66 @@ fn drawConfirm(arena: Allocator, win: Window, m: *const Model) Allocator.Error!v
         _ = print(box, @intCast(i), 3, try text.truncate(arena, try messages.label(arena, t), box.width -| 4), .{});
     }
     if (m.targets.len > listed) _ = print(box, @intCast(listed), 3, try std.fmt.allocPrint(arena, "+{d} more", .{m.targets.len - listed}), style_dim);
+}
+
+/// Shown while an activation or deactivation runs, in place of its form.
+fn drawProgress(arena: Allocator, win: Window, m: *const Model, now: i64) Allocator.Error!void {
+    const label = m.busy orelse return;
+    const listed = @min(m.working.len, 5);
+    const extra: u16 = @intFromBool(m.working.len > listed);
+    const title = try std.fmt.allocPrint(arena, " {s} {d} role{s} ", .{ label, m.working.len, if (m.working.len == 1) "" else "s" });
+    const box = overlay(win, title, 76, @intCast(listed + extra + 5)) orelse return;
+    const pad = 2;
+
+    var y: u16 = 1;
+    for (m.working[0..listed]) |r| {
+        _ = print(box, y, pad, spinnerFrame(m), style_working);
+        _ = print(box, y, pad + 2, try text.truncate(arena, try messages.label(arena, r), box.width -| (pad * 2 + 2)), .{});
+        y += 1;
+    }
+    if (extra > 0) {
+        _ = print(box, y, pad + 2, try std.fmt.allocPrint(arena, "+{d} more", .{m.working.len - listed}), style_dim);
+        y += 1;
+    }
+    y += 1;
+
+    drawSweep(box, y, pad, box.width -| pad * 2, m.ticks);
+    y += 1;
+
+    const elapsed = try clock(arena, now - m.busy_since);
+    const elapsed_width: u16 = @intCast(text.displayWidth(elapsed));
+    const status = try text.truncate(arena, "Waiting for Azure to confirm", box.width -| (pad * 2 + elapsed_width + 2));
+    _ = print(box, y, pad, status, style_dim);
+    _ = print(box, y, box.width -| (pad + elapsed_width), elapsed, style_dim);
+}
+
+/// An indeterminate progress bar: a segment sweeps left to right in half-cell
+/// steps, easing in and out.
+fn drawSweep(win: Window, row: u16, col: u16, width: u16, ticks: u32) void {
+    const halves: i32 = @as(i32, width) * 2;
+    const segment = @max(4, @divTrunc(halves, 3));
+    const t = @as(f32, @floatFromInt(ticks % sweep_ticks)) / sweep_ticks;
+    const eased = t * t * (3 - 2 * t);
+    const head: i32 = @intFromFloat(eased * @as(f32, @floatFromInt(halves + segment)));
+    const tail = head - segment;
+    var x: u16 = 0;
+    while (x < width) : (x += 1) {
+        const left = @as(i32, x) * 2;
+        const lit_left = left >= tail and left < head;
+        const lit_right = left + 1 >= tail and left + 1 < head;
+        const glyph = if (lit_left == lit_right) "━" else if (lit_left) "╸" else "╺";
+        _ = print(win, row, col + x, glyph, if (lit_left or lit_right) .{ .fg = accent } else style_dim);
+    }
+}
+
+fn spinnerFrame(m: *const Model) []const u8 {
+    return spinner[(m.ticks / spinner_ticks) % spinner.len];
+}
+
+/// Elapsed time as `m:ss`.
+fn clock(arena: Allocator, seconds: i64) Allocator.Error![]const u8 {
+    const s: u64 = @intCast(@max(seconds, 0));
+    return std.fmt.allocPrint(arena, "{d}:{d:0>2}", .{ s / 60, s % 60 });
 }
 
 /// A bordered, centred box; returns its inner window.
