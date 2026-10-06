@@ -97,10 +97,10 @@ Run `pim help` for every option.
 | ctrl-d | deactivate the selected or current active roles (asks for confirmation) |
 | ctrl-r | refresh from Azure |
 | ctrl-w, ctrl-u | delete a word, clear the input |
-| esc | clear the filter, then the selection, then quit (closes the form; hides the progress window while the operation keeps running) |
+| esc | clear the filter, then the selection, then quit (closes the form, or hides the progress window) |
 | ctrl-c | quit |
 
-While an activation or deactivation runs, a progress window shows the roles, a progress bar and the elapsed time, and the affected rows show a spinner. Pressing enter or ctrl-d while it runs brings the window back.
+While an activation or deactivation runs, the header shows a spinner. For something easier to notice, opt in with `PIM_PROGRESS_WINDOW=1`: a progress window then shows the roles, a progress bar and the elapsed time, and the affected rows show a spinner. `esc` hides the window while the operation keeps running; enter or ctrl-d brings it back.
 
 ## herdr integration
 
@@ -125,6 +125,7 @@ Then check and reload: `herdr config check && herdr server reload-config`.
 
 What you get:
 - **`prefix+a`** opens the picker as a popup. `prefix+p` is herdr's default for previous tab, so pick a free key if you change it.
+  herdr runs commands through `/bin/sh -lc`, which does not read `~/.zshrc`, so put opt-ins in the command itself, e.g. `command = "PIM_PROGRESS_WINDOW=1 ~/.local/bin/pim pick"`.
 - **Status bar:** shows `PIM <active> · <time left on the soonest expiry>`, plus `◐<n>` for requests that are still pending. It reads the local cache and refreshes from Azure at most every 5 minutes (`--max-age`). Time left is computed locally, so it is always current.
 - **Notifications** (`--notify`), each sent once:
   - 15 minutes before an activation expires;
@@ -145,6 +146,7 @@ What you get:
 |---|---|
 | `PIM_STATE_DIR` | Cache directory. Default: `$XDG_STATE_HOME/pim`, else `~/.local/state/pim` (`%LOCALAPPDATA%\pim` on Windows). |
 | `NO_COLOR` | Disables colors in table output. |
+| `PIM_PROGRESS_WINDOW` | `1` (or `true`, `yes`, `on`) shows a progress window in the picker while roles are being activated or deactivated. Off by default. |
 | `HERDR_BIN_PATH` | herdr binary used for notifications (set by herdr; otherwise `herdr` on `PATH`). |
 
 ## Troubleshooting
@@ -184,7 +186,7 @@ The code follows a ports-and-adapters layout, and `src/main.zig` is the only pla
 | `src/present/` | Messages and error explanations shared by the CLI and the picker; output sanitizing. |
 | `src/cli/` | Argument parsing, commands, table and JSON output. |
 | `src/tui/` | Picker: pure state machine (`model.zig`), keymap, view, and the event loop with background tasks (`app.zig`). |
-| `src/platform/` | Per-user directories and log muting. |
+| `src/platform/` | Per-user directories, opt-in switches from the environment, and log muting. |
 
 Conventions:
 - Explicit allocators, with an arena per command or background task.

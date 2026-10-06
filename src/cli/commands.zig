@@ -61,6 +61,9 @@ pub const help_text =
     \\is disabled for the calls pim makes. Cached role data (no tokens) is stored in
     \\$PIM_STATE_DIR, $XDG_STATE_HOME/pim or ~/.local/state/pim.
     \\
+    \\Set PIM_PROGRESS_WINDOW=1 to show a progress window in the picker while
+    \\roles are being activated or deactivated (off by default).
+    \\
 ;
 
 /// Interactive commands use the cache only briefly so they act on current state.

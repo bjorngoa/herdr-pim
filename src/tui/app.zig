@@ -26,6 +26,7 @@ const Allocator = std.mem.Allocator;
 pub const Options = struct {
     default_duration_min: u32,
     initial_filter: []const u8 = "",
+    progress_window: bool = false,
 };
 
 const settle_timeout_s = 120;
@@ -328,6 +329,7 @@ pub fn run(gpa: Allocator, io: std.Io, environ: *std.process.Environ.Map, sessio
     var model: Model = .init(gpa, opts.default_duration_min);
     defer model.deinit();
     model.filter.set(opts.initial_filter);
+    model.progress_window = opts.progress_window;
 
     var app: App = .{ .gpa = gpa, .io = io, .session = session, .loop = &loop };
     defer app.deinit();

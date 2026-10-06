@@ -112,6 +112,9 @@ pub const Notice = struct {
 pub const Model = struct {
     gpa: Allocator,
     default_duration_min: u32,
+    /// Opt-in: a progress window and faster animations while an operation
+    /// runs. Off, only the header shows a spinner.
+    progress_window: bool = false,
 
     /// Borrowed from the app's current snapshot.
     rows: []const Row = &.{},
@@ -254,7 +257,8 @@ pub const Model = struct {
     /// Advances animations; returns whether the screen needs redrawing.
     pub fn tick(m: *Model) bool {
         m.ticks +%= 1;
-        return m.busy != null or m.refreshing or m.ticks % ticks_per_second == 0;
+        const animating = m.progress_window and (m.busy != null or m.refreshing);
+        return animating or m.ticks % ticks_per_second == 0;
     }
 
     // ---- input -------------------------------------------------------------
@@ -420,13 +424,13 @@ pub const Model = struct {
         m.busy = label;
         m.gpa.free(m.working);
         m.working = working;
-        m.mode = .progress;
+        if (m.progress_window) m.mode = .progress;
     }
 
-    /// Brings back the progress view of the running operation.
+    /// Explains the wait and brings back the progress view, if enabled.
     fn showBusy(m: *Model) Effect {
         m.setNotice(.info, "Wait for the current operation to finish.");
-        m.mode = .progress;
+        if (m.progress_window) m.mode = .progress;
         return .none;
     }
 
@@ -629,8 +633,7 @@ test "tab selects several rows and activation targets only eligible ones" {
     try testing.expectEqualStrings("fix incident", submit.activate.justification);
     try testing.expectEqual(@as(usize, 0), m.selected.count());
     try testing.expect(m.busy != null);
-    try testing.expectEqual(Mode.progress, m.mode);
-    try testing.expectEqual(@as(usize, 2), m.working.len);
+    try testing.expectEqual(Mode.browse, m.mode);
 }
 
 test "form validates duration and required justification" {
@@ -698,9 +701,18 @@ test "ctrl-d asks for confirmation before deactivating" {
     try testing.expectEqualStrings("Deactivating", m.busy.?);
 }
 
-test "busy operations block new ones and bring back the progress view" {
+test "busy operations block new ones" {
     var m = try loaded();
     defer m.deinit();
+    m.busy = "Activating";
+    try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "with the progress window, busy operations bring it back" {
+    var m = try loaded();
+    defer m.deinit();
+    m.progress_window = true;
     m.busy = "Activating";
     try testing.expectEqual(Effect.none, try press(&m, .enter));
     try testing.expectEqual(Mode.progress, m.mode);
@@ -710,6 +722,7 @@ test "busy operations block new ones and bring back the progress view" {
 test "progress view lasts until results arrive and escape only hides it" {
     var m = try loaded();
     defer m.deinit();
+    m.progress_window = true;
     const open = try press(&m, .enter);
     defer freeEffect(open);
     _ = try press(&m, .{ .text = "deploy" });
@@ -734,6 +747,7 @@ test "progress view lasts until results arrive and escape only hides it" {
 test "results close a visible progress view" {
     var m = try loaded();
     defer m.deinit();
+    m.progress_window = true;
     _ = try press(&m, .{ .text = "prod" });
     _ = try press(&m, .deactivate);
     const effect = try press(&m, .enter);
@@ -744,18 +758,38 @@ test "results close a visible progress view" {
     try testing.expectEqual(Mode.browse, m.mode);
 }
 
-test "ticks redraw continuously only while something animates" {
+test "ticks redraw about once a second unless the progress window animates" {
     var m = try loaded();
     defer m.deinit();
+    m.busy = "Activating";
+    m.refreshing = true;
     var redraws: usize = 0;
     for (0..ticks_per_second * 3) |_| redraws += @intFromBool(m.tick());
     try testing.expectEqual(@as(usize, 3), redraws);
 
-    m.refreshing = true;
+    m.progress_window = true;
+    try testing.expect(m.tick());
+    m.busy = null;
     try testing.expect(m.tick());
     m.refreshing = false;
-    m.busy = "Activating";
-    try testing.expect(m.tick());
+    redraws = 0;
+    for (0..ticks_per_second) |_| redraws += @intFromBool(m.tick());
+    try testing.expectEqual(@as(usize, 1), redraws);
+}
+
+test "without the progress window an operation keeps the list in view" {
+    var m = try loaded();
+    defer m.deinit();
+    const open = try press(&m, .enter);
+    defer freeEffect(open);
+    _ = try press(&m, .{ .text = "deploy" });
+    const submit = try press(&m, .enter);
+    defer freeEffect(submit);
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expectEqualStrings("Activating", m.busy.?);
+    m.setResults(&.{});
+    try testing.expect(m.busy == null);
+    try testing.expectEqual(Mode.browse, m.mode);
 }
 
 test "refresh is requested once until rows arrive" {

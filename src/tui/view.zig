@@ -76,7 +76,10 @@ fn drawHeader(arena: Allocator, win: Window, m: *const Model, now: i64) Allocato
     }
 
     const right = if (m.busy) |label|
-        try std.fmt.allocPrint(arena, "{s} {s} · {s} ", .{ spinnerFrame(m), label, try clock(arena, now - m.busy_since) })
+        (if (m.progress_window)
+            try std.fmt.allocPrint(arena, "{s} {s} · {s} ", .{ spinnerFrame(m), label, try clock(arena, now - m.busy_since) })
+        else
+            try std.fmt.allocPrint(arena, "{s} {s}… ", .{ spinnerFrame(m), label }))
     else if (m.refreshing)
         try std.fmt.allocPrint(arena, "{s} refreshing ", .{spinnerFrame(m)})
     else if (m.fetched_at) |at|
@@ -84,7 +87,8 @@ fn drawHeader(arena: Allocator, win: Window, m: *const Model, now: i64) Allocato
     else
         "";
     const width: u16 = @intCast(text.displayWidth(right));
-    if (width < win.width) _ = print(win, 0, win.width - width, right, if (m.busy != null) style_busy else style_dim);
+    const style = if (m.busy != null and m.progress_window) style_busy else style_dim;
+    if (width < win.width) _ = print(win, 0, win.width - width, right, style);
 }
 
 fn updatedAgo(arena: Allocator, age: i64) Allocator.Error![]const u8 {
@@ -162,7 +166,7 @@ fn drawList(arena: Allocator, win: Window, m: *const Model, now: i64) Allocator.
             _ = print(line, 0, 0, "▌", .{ .fg = accent, .bg = base.bg });
         }
         if (m.isSelected(r)) _ = print(line, 0, 2, "✓", merge(base, style_selected));
-        if (m.isWorking(r)) {
+        if (m.progress_window and m.isWorking(r)) {
             _ = print(line, 0, 4, spinnerFrame(m), merge(base, style_working));
         } else _ = print(line, 0, 4, stateGlyph(r.state), merge(base, stateStyle(r.state)));
 
@@ -302,7 +306,8 @@ fn drawSweep(win: Window, row: u16, col: u16, width: u16, ticks: u32) void {
 }
 
 fn spinnerFrame(m: *const Model) []const u8 {
-    return spinner[(m.ticks / spinner_ticks) % spinner.len];
+    const ticks_per_frame: u32 = if (m.progress_window) spinner_ticks else model_mod.ticks_per_second;
+    return spinner[(m.ticks / ticks_per_frame) % spinner.len];
 }
 
 /// Elapsed time as `m:ss`.
