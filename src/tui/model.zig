@@ -249,6 +249,14 @@ pub const Model = struct {
         if (m.mode == .progress) m.mode = .browse;
     }
 
+    pub fn restoreOperation(m: *Model, label: []const u8, targets: []const Row, started_at: i64) Allocator.Error!void {
+        const working = try m.gpa.dupe(Row, targets);
+        m.closeOverlay();
+        m.results = &.{};
+        m.beginOperation(label, working);
+        m.busy_since = started_at;
+    }
+
     pub fn setPageSize(m: *Model, n: usize) void {
         m.page_size = @max(1, n);
         m.ensureCursorVisible();
@@ -429,7 +437,7 @@ pub const Model = struct {
 
     /// Explains the wait and brings back the progress view, if enabled.
     fn showBusy(m: *Model) Effect {
-        m.setNotice(.info, "Wait for the current operation to finish.");
+        m.setNotice(.info, "An operation is running. You can close the picker; it will continue in the background.");
         if (m.progress_window) m.mode = .progress;
         return .none;
     }
@@ -707,6 +715,23 @@ test "busy operations block new ones" {
     m.busy = "Activating";
     try testing.expectEqual(Effect.none, try press(&m, .enter));
     try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "reopened picker restores background roles and can quit without clearing the operation" {
+    var m = try loaded();
+    defer m.deinit();
+    m.progress_window = true;
+    try m.restoreOperation("Activating", fixture[0..1], 42);
+    try testing.expectEqualStrings("Activating", m.busy.?);
+    try testing.expectEqual(@as(i64, 42), m.busy_since);
+    try testing.expect(m.isWorking(fixture[0]));
+    try testing.expect(!m.isWorking(fixture[1]));
+    try testing.expectEqual(Effect.none, try press(&m, .escape));
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expectEqual(Effect.quit, try press(&m, .quit));
+    try testing.expect(m.busy != null);
+    m.setResults(&.{});
+    try testing.expect(m.busy == null and m.working.len == 0);
 }
 
 test "with the progress window, busy operations bring it back" {

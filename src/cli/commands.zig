@@ -63,6 +63,8 @@ pub const help_text =
     \\
     \\Set PIM_PROGRESS_WINDOW=1 to show a progress window in the picker while
     \\roles are being activated or deactivated (off by default).
+    \\Picker operations keep running after you close the picker or Herdr popup.
+    \\Reopen it for progress/results; Herdr notifications report the outcome.
     \\
 ;
 

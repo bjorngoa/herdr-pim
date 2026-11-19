@@ -8,6 +8,7 @@ const env = @import("platform/env.zig");
 const session_mod = @import("app/session.zig");
 const log = @import("platform/log.zig");
 const tui = @import("tui/app.zig");
+const background_job = @import("app/background_job.zig");
 const vaxis = @import("vaxis");
 
 pub const std_options: std.Options = .{ .log_level = .warn, .logFn = log.logFn };
@@ -39,6 +40,8 @@ pub fn main(init: std.process.Init) u8 {
 fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) u8 {
     const arena = init.arena.allocator();
     const argv = argStrings(arena, init.minimal.args) catch return exit_failure;
+    if (argv.len == 2 and std.mem.eql(u8, argv[0], background_job.worker_command))
+        return runWorker(init, argv[1], stderr);
 
     var arg_diag: args.Diagnostics = .{};
     const command = args.parse(arena, argv, &arg_diag) catch |err| {
@@ -109,6 +112,23 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) u
     return exit_ok;
 }
 
+fn runWorker(init: std.process.Init, id: []const u8, stderr: *std.Io.Writer) u8 {
+    const arena = init.arena.allocator();
+    const state_dir = paths.stateDir(arena, init.environ_map) catch return exit_failure;
+    var session: session_mod.Session = .init(arena, .{
+        .io = init.io,
+        .gpa = init.gpa,
+        .environ = init.environ_map,
+        .state_dir = state_dir,
+    });
+    defer session.deinit();
+    background_job.run(&session, id) catch |err| {
+        stderr.print("pim: background operation failed ({t}).\n", .{err}) catch {};
+        return exit_failure;
+    };
+    return exit_ok;
+}
+
 fn runPicker(init: std.process.Init, session: *session_mod.Session, opts: args.Pick, ctx: commands.Context, stderr: *std.Io.Writer) u8 {
     const terminal = (std.Io.File.stdin().isTty(init.io) catch false) and (std.Io.File.stdout().isTty(init.io) catch false);
     if (!terminal) {
@@ -169,6 +189,7 @@ test {
     _ = @import("app/snapshot_service.zig");
     _ = @import("app/session.zig");
     _ = @import("app/activation.zig");
+    _ = @import("app/background_job.zig");
     _ = @import("cli/args.zig");
     _ = @import("cli/render.zig");
     _ = @import("cli/commands.zig");

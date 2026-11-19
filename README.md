@@ -102,6 +102,8 @@ Run `pim help` for every option.
 
 While an activation or deactivation runs, the header shows a spinner. For something easier to notice, opt in with `PIM_PROGRESS_WINDOW=1`: a progress window then shows the roles, a progress bar and the elapsed time, and the affected rows show a spinner. `esc` hides the window while the operation keeps running; enter or ctrl-d brings it back.
 
+**You can close the picker or Herdr popup while roles are activating or deactivating.** Operations run in an independent background worker; closing the popup dismisses the UI, not the operation. Reopen the picker to see the running roles or the last operation's results. A Herdr notification reports completion, failures, or requests still pending approval/application. Only one picker operation runs at a time, including across reopened popups. If a worker is interrupted, the picker reports it without automatically resubmitting requests; refresh the roles before retrying.
+
 ## herdr integration
 
 Add to `~/.config/herdr/config.toml`, adjusting the path to wherever `pim` is installed:
@@ -136,7 +138,7 @@ What you get:
 
 - **Network:** `pim` talks only to `https://management.azure.com` (the ARM PIM APIs, version `2020-10-01`). Tokens come from `az account get-access-token`, with Azure CLI telemetry turned off for those calls (`AZURE_CORE_COLLECT_TELEMETRY=false`).
 - **Tokens:** kept in memory only, never written to disk or logs. Redirects are not followed, and pagination links pointing anywhere other than `management.azure.com` are refused, so a token can never be sent to another host.
-- **Cache:** the state directory holds `snapshot.json` (roles, scopes, end times) and `alerts.json` (notifications already sent). Files are written atomically with mode `0600`, in a `0700` directory.
+- **Cache:** the state directory holds `snapshot.json` (roles, scopes, end times), `alerts.json` (notifications already sent), and `operation.json`/`operation.lock` (the last picker operation and its worker lock). Files are written with mode `0600`, in a `0700` directory; JSON updates are atomic. The justification is handed to the worker in the private operation file and removed before it contacts Azure. No tokens are persisted.
 - **Display:** names returned by Azure are stripped of control characters before they are shown, so they cannot inject terminal escape sequences.
 - **What it does in Azure:** only self-activation and self-deactivation requests (`roleAssignmentScheduleRequests`, `SelfActivate`/`SelfDeactivate`) for your own principal, which is read from your token. Azure enforces every PIM policy.
 

@@ -11,6 +11,7 @@ const selection = @import("../domain/selection.zig");
 const session_mod = @import("../app/session.zig");
 const service = @import("../app/snapshot_service.zig");
 const activation = @import("../app/activation.zig");
+const background_job = @import("../app/background_job.zig");
 const messages = @import("../present/messages.zig");
 const errors = @import("../present/errors.zig");
 const log = @import("../platform/log.zig");
@@ -29,26 +30,22 @@ pub const Options = struct {
     progress_window: bool = false,
 };
 
-const settle_timeout_s = 120;
-
 const Event = union(enum) {
     key_press: vaxis.Key,
     winsize: vaxis.Winsize,
     tick,
     rows_loaded: *Batch,
     policies_loaded: *Batch,
-    operation_done: *Batch,
 };
 
 /// Results of one background task, owned by its arena.
 const Batch = struct {
     arena: std.heap.ArenaAllocator,
-    refs: u8 = 1,
     rows: ?[]const Row = null,
     fetched_at: i64 = 0,
     plans: []const activation.Plan = &.{},
-    lines: []const messages.Line = &.{},
     failure: ?[]const u8 = null,
+    job: ?background_job.Job = null,
 
     fn create(gpa: Allocator) Allocator.Error!*Batch {
         const b = try gpa.create(Batch);
@@ -60,14 +57,7 @@ const Batch = struct {
         return b.arena.allocator();
     }
 
-    fn retain(b: *Batch) *Batch {
-        b.refs += 1;
-        return b;
-    }
-
     fn release(b: *Batch, gpa: Allocator) void {
-        b.refs -= 1;
-        if (b.refs > 0) return;
         b.arena.deinit();
         gpa.destroy(b);
     }
@@ -84,16 +74,16 @@ const App = struct {
 
     rows_batch: ?*Batch = null,
     policies_batch: ?*Batch = null,
-    results_batch: ?*Batch = null,
+    job_batch: ?*Batch = null,
     retired: std.ArrayList(*Batch) = .empty,
 
     fn deinit(app: *App) void {
         app.group.cancel(app.io);
         while (app.loop.tryEvent() catch null) |event| switch (event) {
-            .rows_loaded, .policies_loaded, .operation_done => |b| b.release(app.gpa),
+            .rows_loaded, .policies_loaded => |b| b.release(app.gpa),
             else => {},
         };
-        for ([_]?*Batch{ app.rows_batch, app.policies_batch, app.results_batch }) |b| if (b) |batch| batch.release(app.gpa);
+        for ([_]?*Batch{ app.rows_batch, app.policies_batch, app.job_batch }) |b| if (b) |batch| batch.release(app.gpa);
         for (app.retired.items) |b| b.release(app.gpa);
         app.retired.deinit(app.gpa);
     }
@@ -106,7 +96,7 @@ const App = struct {
     /// loop has already stopped.
     fn post(app: *App, event: Event) void {
         app.loop.postEvent(event) catch switch (event) {
-            .rows_loaded, .policies_loaded, .operation_done => |b| b.release(app.gpa),
+            .rows_loaded, .policies_loaded => |b| b.release(app.gpa),
             else => {},
         };
     }
@@ -115,7 +105,6 @@ const App = struct {
     /// which case the caller still owns the arguments.
     fn spawn(app: *App, m: *Model, comptime function: anytype, args: anytype) bool {
         app.group.concurrent(app.io, function, args) catch {
-            m.endOperation();
             m.refreshing = false;
             m.setNotice(.failed, "Could not start a background task.");
             return false;
@@ -131,15 +120,15 @@ const App = struct {
             .quit => return true,
             .refresh => _ = app.spawn(m, refreshTask, .{app}),
             .load_policies => |targets| if (!app.spawn(m, policiesTask, .{ app, targets, m.default_duration_min })) app.gpa.free(targets),
-            .activate => |job| if (app.spawn(m, activateTask, .{ app, job })) {
-                m.busy_since = app.now();
-            } else {
+            .activate => |job| {
+                app.startOperation(m, .activate, job.targets, job.duration_min, job.justification);
                 app.gpa.free(job.targets);
                 app.gpa.free(job.justification);
             },
-            .deactivate => |targets| if (app.spawn(m, deactivateTask, .{ app, targets })) {
-                m.busy_since = app.now();
-            } else app.gpa.free(targets),
+            .deactivate => |targets| {
+                app.startOperation(m, .deactivate, targets, 0, "");
+                app.gpa.free(targets);
+            },
         }
         return false;
     }
@@ -161,16 +150,56 @@ const App = struct {
                     m.setNotice(.failed, msg);
                 } else m.setPolicies(b.plans);
             },
-            .operation_done => |b| {
-                app.inflight -= 1;
-                if (b.rows != null) try app.adoptRows(m, b.retain());
-                if (app.results_batch) |old| try app.retire(old);
-                app.results_batch = b;
-                m.setResults(b.lines);
-                if (b.failure) |msg| m.setNotice(.failed, msg);
-            },
             else => unreachable,
         }
+    }
+
+    fn startOperation(app: *App, m: *Model, intent: selection.Intent, targets: []const Row, duration_min: u32, justification: []const u8) void {
+        var arena: std.heap.ArenaAllocator = .init(app.gpa);
+        defer arena.deinit();
+        const child = background_job.start(app.session, arena.allocator(), intent, targets, duration_min, justification) catch |err| {
+            m.endOperation();
+            m.setNotice(.failed, if (err == error.OperationInProgress)
+                "Another PIM operation is already running. Reopen the picker to see its progress."
+            else
+                "Could not start the background operation; no requests were submitted.");
+            return;
+        };
+        // Cancellation stops waiting, not the independent worker.
+        app.group.concurrent(app.io, reapWorker, .{ app.io, child }) catch {};
+        m.busy_since = app.now();
+        app.syncJob(m) catch m.setNotice(.failed, "Could not read background progress. The operation may still be running.");
+    }
+
+    fn syncJob(app: *App, m: *Model) !void {
+        const b = try Batch.create(app.gpa);
+        errdefer b.release(app.gpa);
+        b.job = try background_job.load(b.allocator(), app.session.env);
+        const job = b.job orelse {
+            b.release(app.gpa);
+            return;
+        };
+        if (app.job_batch) |old| {
+            const previous = old.job.?;
+            if (std.mem.eql(u8, previous.id, job.id) and previous.done == job.done) {
+                b.release(app.gpa);
+                return;
+            }
+        }
+        try app.retired.ensureUnusedCapacity(app.gpa, 1);
+        if (job.done) {
+            m.setResults(job.lines);
+            if (job.failure) |msg| m.setNotice(.failed, msg);
+            if (!m.refreshing) {
+                m.refreshing = true;
+                _ = app.spawn(m, refreshTask, .{app});
+            }
+        } else {
+            try m.restoreOperation(if (job.intent == .activate) "Activating" else "Deactivating", job.targets, job.started_at);
+            m.setNotice(.info, "You can close the picker. This operation will continue in the background.");
+        }
+        if (app.job_batch) |old| app.retired.appendAssumeCapacity(old);
+        app.job_batch = b;
     }
 
     fn adoptRows(app: *App, m: *Model, b: *Batch) Allocator.Error!void {
@@ -185,7 +214,7 @@ const App = struct {
 
     /// Frees retired batches once nothing can still point into them.
     fn collect(app: *App, m: *const Model) void {
-        if (app.inflight > 0 or m.mode != .browse) return;
+        if (app.inflight > 0 or m.mode != .browse or m.busy != null) return;
         if (app.policies_batch) |b| {
             app.policies_batch = null;
             b.release(app.gpa);
@@ -224,76 +253,9 @@ fn policiesTask(app: *App, targets: []Row, requested_min: u32) void {
     app.post(.{ .policies_loaded = b });
 }
 
-fn activateTask(app: *App, job: model_mod.ActivateJob) void {
-    defer app.gpa.free(job.targets);
-    defer app.gpa.free(job.justification);
-    const b = Batch.create(app.gpa) catch return;
-    var diag: session_mod.Diagnostics = .{};
-    runOperation(app, b, .activate, job, &diag) catch |err| {
-        b.failure = errors.summaryAlloc(b.allocator(), err, diag) catch "Activation failed";
-    };
-    app.post(.{ .operation_done = b });
-}
-
-fn deactivateTask(app: *App, targets: []Row) void {
-    defer app.gpa.free(targets);
-    const b = Batch.create(app.gpa) catch return;
-    var diag: session_mod.Diagnostics = .{};
-    const job: model_mod.ActivateJob = .{ .targets = targets, .duration_min = 0, .justification = "" };
-    runOperation(app, b, .deactivate, job, &diag) catch |err| {
-        b.failure = errors.summaryAlloc(b.allocator(), err, diag) catch "Deactivation failed";
-    };
-    app.post(.{ .operation_done = b });
-}
-
-/// Submits the requests, waits for Azure to apply them, refreshes the rows
-/// and describes each outcome.
-fn runOperation(app: *App, b: *Batch, intent: selection.Intent, job: model_mod.ActivateJob, diag: *session_mod.Diagnostics) errors.Error!void {
-    const arena = b.allocator();
-    const submissions = switch (intent) {
-        .activate => blk: {
-            const plans = try activation.plan(app.session, arena, job.targets, job.duration_min, diag);
-            break :blk try activation.activate(app.session, arena, plans, job.justification, app.now(), diag);
-        },
-        .deactivate => try activation.deactivate(app.session, arena, job.targets, diag),
-    };
-
-    const settling = for (submissions) |s| {
-        if (s.settlesAutomatically()) break true;
-    } else false;
-
-    // Requests were already submitted, so later failures are reported next to
-    // the outcomes rather than replacing them.
-    var problems: std.ArrayList(messages.Line) = .empty;
-    var still_applying = false;
-    if (settling) {
-        if (activation.awaitSettled(app.session, arena, submissions, intent, settle_timeout_s, diag)) |settled| {
-            still_applying = !settled;
-        } else |err| {
-            try problems.append(arena, try problemLine(arena, "Could not confirm the change", err, diag.*));
-        }
-    }
-    loadRows(app, b, diag) catch |err|
-        try problems.append(arena, try problemLine(arena, "Could not refresh roles", err, diag.*));
-
-    const now = app.now();
-    var lines: std.ArrayList(messages.Line) = .empty;
-    for (submissions) |s| {
-        const final = if (b.rows) |rows| messages.findRow(rows, s.row) else null;
-        try lines.append(arena, try messages.describeOutcome(arena, s, intent, final, now));
-    }
-    try lines.appendSlice(arena, problems.items);
-    if (still_applying) try lines.append(arena, .{ .kind = .info, .glyph = "…", .text = "Azure is still applying some changes; press ^r to refresh." });
-    b.lines = lines.items;
-}
-
-fn problemLine(arena: Allocator, what: []const u8, err: errors.Error, diag: session_mod.Diagnostics) Allocator.Error!messages.Line {
-    const reason = try errors.summaryAlloc(arena, err, diag);
-    return .{
-        .kind = .info,
-        .glyph = "!",
-        .text = try std.fmt.allocPrint(arena, "{s}: {s}. Press ^r to refresh.", .{ what, reason }),
-    };
+fn reapWorker(io: std.Io, process: std.process.Child) void {
+    var child = process;
+    _ = child.wait(io) catch {};
 }
 
 fn tickTask(app: *App) std.Io.Cancelable!void {
@@ -342,6 +304,7 @@ pub fn run(gpa: Allocator, io: std.Io, environ: *std.process.Environ.Map, sessio
     }
     model.refreshing = true;
     _ = app.spawn(&model, refreshTask, .{&app});
+    try app.syncJob(&model);
     app.group.concurrent(io, tickTask, .{&app}) catch {};
 
     var frame: std.heap.ArenaAllocator = .init(gpa);
@@ -354,7 +317,11 @@ pub fn run(gpa: Allocator, io: std.Io, environ: *std.process.Environ.Map, sessio
                 if (app.perform(&model, try model.update(input))) break;
             },
             .winsize => |ws| try vx.resize(gpa, out, ws),
-            .tick => if (!model.tick()) continue,
+            .tick => {
+                if (!model.tick()) continue;
+                if (model.ticks % model_mod.ticks_per_second == 0)
+                    app.syncJob(&model) catch model.setNotice(.failed, "Could not read background progress.");
+            },
             else => try app.handle(&model, event),
         }
         app.collect(&model);
