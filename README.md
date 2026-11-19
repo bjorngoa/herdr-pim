@@ -104,6 +104,20 @@ While an activation or deactivation runs, the header shows a spinner. For someth
 
 **You can close the picker or Herdr popup while roles are activating or deactivating.** Operations run in an independent background worker; closing the popup dismisses the UI, not the operation. Reopen the picker to see the running roles or the last operation's results. A Herdr notification reports completion, failures, or requests still pending approval/application. Only one picker operation runs at a time, including across reopened popups. If a worker is interrupted, the picker reports it without automatically resubmitting requests; refresh the roles before retrying.
 
+### Optional in-popup Azure sign-in
+
+Sign-in support is **off by default**. Enable it with `PIM_SIGN_IN=1 pim pick`, or change your Herdr popup command to:
+
+```toml
+command = "PIM_SIGN_IN=1 ~/.local/bin/pim pick"
+```
+
+With this opt-in, an expired Azure session offers **Sign in to Azure**, and **ctrl-l** opens sign-in manually. Press **enter** for browser sign-in, or **d** for device-code sign-in; the Microsoft sign-in URL and code appear inside the popup. Complete sign-in/MFA in the browser. The existing Azure tenant is reused when available, and Azure CLI's interactive subscription selector is disabled for this login only.
+
+**ctrl-l** always opens the sign-in dialog; it does not first check whether your current Azure session is still valid. Login only starts after you explicitly choose browser or device-code sign-in.
+
+After sign-in, roles are refreshed and your selection is preserved. For a failed operation, **enter** opens the normal activation form (or deactivation confirmation) for review; roles already active or still pending are excluded from activation retries. Nothing is submitted automatically. **esc** cancels sign-in or dismisses the dialog; quitting the picker also cancels an unfinished sign-in, not an already-running role operation. If login or refresh fails, the popup stays open with a retry option. Device codes are kept in memory, never in the PIM cache; Azure CLI manages its own normal credential cache.
+
 ## herdr integration
 
 Add to `~/.config/herdr/config.toml`, adjusting the path to wherever `pim` is installed:
@@ -149,6 +163,7 @@ What you get:
 | `PIM_STATE_DIR` | Cache directory. Default: `$XDG_STATE_HOME/pim`, else `~/.local/state/pim` (`%LOCALAPPDATA%\pim` on Windows). |
 | `NO_COLOR` | Disables colors in table output. |
 | `PIM_PROGRESS_WINDOW` | `1` (or `true`, `yes`, `on`) shows a progress window in the picker while roles are being activated or deactivated. Off by default. |
+| `PIM_SIGN_IN` | `1` (or `true`, `yes`, `on`) enables in-popup Azure browser/device-code sign-in and the ctrl-l shortcut. Off by default. |
 | `HERDR_BIN_PATH` | herdr binary used for notifications (set by herdr; otherwise `herdr` on `PATH`). |
 
 ## Troubleshooting

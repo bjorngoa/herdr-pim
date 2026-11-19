@@ -3,6 +3,7 @@ const std = @import("std");
 
 /// Shows a progress window in the picker while roles are being changed.
 pub const progress_window = "PIM_PROGRESS_WINDOW";
+pub const sign_in = "PIM_SIGN_IN";
 
 /// True when `name` is `1`, `true`, `yes` or `on` (any case). Anything else,
 /// including unset or empty, is false, so switches stay off by default.
@@ -20,6 +21,11 @@ test "switches are off unless explicitly turned on" {
     var env: std.process.Environ.Map = .init(testing.allocator);
     defer env.deinit();
     try testing.expect(!enabled(&env, progress_window));
+    try testing.expect(!enabled(&env, sign_in));
+    try env.put(sign_in, "1");
+    try testing.expect(enabled(&env, sign_in));
+    try env.put(sign_in, "0");
+    try testing.expect(!enabled(&env, sign_in));
 
     for ([_][]const u8{ "1", "true", "YES", " on " }) |v| {
         try env.put(progress_window, v);

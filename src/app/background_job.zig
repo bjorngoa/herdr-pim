@@ -31,6 +31,7 @@ pub const Job = struct {
     done: bool = false,
     lines: []const messages.Line = &.{},
     failure: ?[]const u8 = null,
+    authentication_required: bool = false,
     /// Cleared by the worker before it contacts Azure.
     justification: ?[]const u8 = null,
 };
@@ -118,6 +119,7 @@ pub fn run(session: *session_mod.Session, id: []const u8) !void {
 
     var diag: session_mod.Diagnostics = .{};
     execute(session, &job, justification, &diag) catch |err| {
+        job.authentication_required = errors.needsSignIn(err, diag);
         job.failure = try errors.summaryAlloc(session.arena, err, diag);
     };
     job.done = true;
@@ -148,6 +150,7 @@ fn execute(session: *session_mod.Session, job: *Job, justification: []const u8, 
         if (activation.awaitSettled(session, arena, submissions, job.intent, 120, diag)) |settled| {
             still_applying = !settled;
         } else |err| {
+            job.authentication_required = job.authentication_required or errors.needsSignIn(err, diag.*);
             try problems.append(arena, try problemLine(arena, "Could not confirm the change", err, diag.*));
         }
     }
@@ -155,11 +158,15 @@ fn execute(session: *session_mod.Session, job: *Job, justification: []const u8, 
     const rows: []const rows_mod.Row = if (service.refresh(session, arena, now, diag)) |snapshot|
         try rows_mod.build(arena, snapshot, now)
     else |err| blk: {
+        job.authentication_required = job.authentication_required or errors.needsSignIn(err, diag.*);
         try problems.append(arena, try problemLine(arena, "Could not refresh roles", err, diag.*));
         break :blk &.{};
     };
-    for (submissions) |s|
+    for (submissions) |s| {
+        if (s.outcome == .failed and s.outcome.failed.reason == .rejected)
+            job.authentication_required = job.authentication_required or errors.needsSignIn(error.HttpFailed, .{ .arm = s.outcome.failed.arm });
         try lines.append(arena, try messages.describeOutcome(arena, s, job.intent, messages.findRow(rows, s.row), now));
+    }
     try lines.appendSlice(arena, problems.items);
     if (still_applying) try lines.append(arena, .{ .kind = .info, .glyph = "...", .text = "Azure is still applying some changes; press ^r to refresh." });
     job.lines = lines.items;

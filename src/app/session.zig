@@ -38,6 +38,13 @@ pub const Session = struct {
         self.http.deinit();
     }
 
+    pub fn invalidateToken(self: *Session) std.Io.Cancelable!void {
+        try self.mutex.lock(self.env.io);
+        defer self.mutex.unlock(self.env.io);
+        self.token = null;
+        self.authorization = "";
+    }
+
     /// Returns a client with a valid token, fetching a new one from `az` on
     /// first use and shortly before the current one expires.
     pub fn client(self: *Session, diag: *Diagnostics) azcli.Error!arm.Client {

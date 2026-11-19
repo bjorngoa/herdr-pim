@@ -11,6 +11,7 @@ const activation = @import("../app/activation.zig");
 const messages = @import("../present/messages.zig");
 const text = @import("../present/text.zig");
 const model_mod = @import("model.zig");
+const azure_login = @import("../adapters/azure_login.zig");
 
 const Row = rows_mod.Row;
 const Model = model_mod.Model;
@@ -56,6 +57,7 @@ pub fn draw(arena: Allocator, win: Window, m: *Model, now: i64) Allocator.Error!
         .form => try drawForm(arena, win, m),
         .confirm_deactivate => try drawConfirm(arena, win, m),
         .progress => try drawProgress(arena, win, m, now),
+        .sign_in => try drawSignIn(arena, win, m),
     }
 }
 
@@ -194,10 +196,14 @@ fn drawFooter(arena: Allocator, win: Window, m: *const Model) Allocator.Error!vo
         y += 1;
     }
     const help = switch (m.mode) {
-        .browse => "↑↓ move · tab select · enter activate · ^d deactivate · ^r refresh · esc quit",
+        .browse => if (m.sign_in_enabled)
+            "↑↓ move · tab select · enter activate · ^d deactivate · ^r refresh · ^l sign in · esc quit"
+        else
+            "↑↓ move · tab select · enter activate · ^d deactivate · ^r refresh · esc quit",
         .form => "enter submit · tab switch field · esc cancel",
         .confirm_deactivate => "y/enter confirm · n/esc cancel",
         .progress => "esc hide (keeps running) · ^c quit",
+        .sign_in => "enter continue · d device sign-in · esc cancel",
     };
     _ = print(win, y, 1, try text.truncate(arena, help, win.width -| 2), style_dim);
 }
@@ -253,6 +259,42 @@ fn drawConfirm(arena: Allocator, win: Window, m: *const Model) Allocator.Error!v
         _ = print(box, @intCast(i), 3, try text.truncate(arena, try messages.label(arena, t), box.width -| 4), .{});
     }
     if (m.targets.len > listed) _ = print(box, @intCast(listed), 3, try std.fmt.allocPrint(arena, "+{d} more", .{m.targets.len - listed}), style_dim);
+}
+
+fn drawSignIn(arena: Allocator, win: Window, m: *const Model) Allocator.Error!void {
+    const title = switch (m.sign_in_state) {
+        .required => " Sign in to Azure ",
+        .running => " Signing in to Azure ",
+        .refreshing => " Refreshing Azure roles ",
+        .ready => " Signed in successfully ",
+        .failed => " Sign-in needs attention ",
+    };
+    const box = overlay(win, title, 78, 9) orelse return;
+    const status = switch (m.sign_in_state) {
+        .required => if (m.authentication_required) "Your Azure session has expired or needs sign-in." else "Sign in using your Azure CLI account.",
+        .running => "Complete Microsoft sign-in / MFA in your browser.",
+        .refreshing => "Sign-in succeeded. Refreshing roles before any retry...",
+        .ready => "Your roles have been refreshed. Nothing was retried.",
+        .failed => "Sign-in or role refresh did not complete.",
+    };
+    _ = print(box, 1, 2, try text.truncate(arena, status, box.width -| 4), .{});
+    if (m.sign_in_code) |*code| {
+        _ = print(box, 3, 2, azure_login.device_url, style_selected);
+        _ = print(box, 4, 2, try std.fmt.allocPrint(arena, "Code: {s}", .{code.text()}), style_bold);
+    } else if (m.sign_in_error) |*err| {
+        _ = print(box, 3, 2, try text.truncate(arena, err.text(), box.width -| 4), kindStyle(.failed));
+    } else if (m.sign_in_state == .running) {
+        _ = print(box, 3, 2, "Waiting for sign-in. Press d to use a device code.", style_dim);
+    } else if (m.sign_in_state == .ready) {
+        _ = print(box, 3, 2, if (m.selected.count() > 0) "Your selection is preserved. Review before retrying." else "No selected roles need retrying.", style_dim);
+    }
+    const help = switch (m.sign_in_state) {
+        .required, .failed => "enter sign in · d device code · esc dismiss",
+        .running => "d use device code · esc cancel sign-in",
+        .refreshing => "esc cancel refresh",
+        .ready => if (m.retry_intent != null and m.selected.count() > 0) "enter review retry · esc back" else "enter/esc back",
+    };
+    _ = print(box, 7, 2, try text.truncate(arena, help, box.width -| 4), style_selected);
 }
 
 /// Shown while an activation or deactivation runs, in place of its form.

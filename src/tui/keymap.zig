@@ -12,6 +12,7 @@ pub fn translate(key: Key) ?Input {
     if (key.matches('c', ctrl)) return .quit;
     if (key.matches('d', ctrl)) return .deactivate;
     if (key.matches('r', ctrl)) return .refresh;
+    if (key.matches('l', ctrl)) return .sign_in;
     if (key.matches('w', ctrl)) return .delete_word;
     if (key.matches('u', ctrl)) return .clear_line;
     if (key.matches('n', ctrl)) return .down;
@@ -43,6 +44,7 @@ test "control shortcuts map to commands" {
     try testing.expectEqual(Input.quit, translate(.{ .codepoint = 'c', .mods = .{ .ctrl = true } }).?);
     try testing.expectEqual(Input.deactivate, translate(.{ .codepoint = 'd', .mods = .{ .ctrl = true } }).?);
     try testing.expectEqual(Input.refresh, translate(.{ .codepoint = 'r', .mods = .{ .ctrl = true } }).?);
+    try testing.expectEqual(Input.sign_in, translate(.{ .codepoint = 'l', .mods = .{ .ctrl = true } }).?);
     try testing.expectEqual(Input.down, translate(.{ .codepoint = 'n', .mods = .{ .ctrl = true } }).?);
 }
 

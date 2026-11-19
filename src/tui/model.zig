@@ -6,6 +6,8 @@ const duration = @import("../domain/duration.zig");
 const activation = @import("../app/activation.zig");
 const messages = @import("../present/messages.zig");
 const TextField = @import("text_field.zig").TextField;
+const azure_login = @import("../adapters/azure_login.zig");
+const selection = @import("../domain/selection.zig");
 
 const Row = rows_mod.Row;
 const Allocator = std.mem.Allocator;
@@ -28,9 +30,11 @@ pub const Input = union(enum) {
     quit,
     deactivate,
     refresh,
+    sign_in,
 };
 
-pub const Mode = enum { browse, form, confirm_deactivate, progress };
+pub const Mode = enum { browse, form, confirm_deactivate, progress, sign_in };
+pub const SignInState = enum { required, running, refreshing, ready, failed };
 
 /// Animation clock. The screen only redraws this often while something moves.
 pub const tick_ms = 50;
@@ -50,6 +54,8 @@ pub const Effect = union(enum) {
     none,
     quit,
     refresh,
+    sign_in: azure_login.Method,
+    cancel_sign_in,
     load_policies: []Row,
     activate: ActivateJob,
     deactivate: []Row,
@@ -115,6 +121,14 @@ pub const Model = struct {
     /// Opt-in: a progress window and faster animations while an operation
     /// runs. Off, only the header shows a spinner.
     progress_window: bool = false,
+    sign_in_enabled: bool = false,
+    sign_in_state: SignInState = .required,
+    sign_in_code: ?azure_login.DeviceCode = null,
+    sign_in_error: ?Notice = null,
+    authentication_required: bool = false,
+    authentication_prompted: bool = false,
+    retry_intent: ?selection.Intent = null,
+    retry_duration_min: ?u32 = null,
 
     /// Borrowed from the app's current snapshot.
     rows: []const Row = &.{},
@@ -257,6 +271,62 @@ pub const Model = struct {
         m.busy_since = started_at;
     }
 
+    pub fn rememberRetry(m: *Model, targets: []const Row, intent: selection.Intent, duration_min: u32) Allocator.Error!void {
+        if (!m.sign_in_enabled) return;
+        m.clearSelection();
+        for (targets) |target| {
+            const id = try m.gpa.dupe(u8, target.eligibility.schedule_id);
+            errdefer m.gpa.free(id);
+            try m.selected.put(m.gpa, id, {});
+        }
+        m.retry_intent = intent;
+        m.retry_duration_min = duration_min;
+    }
+
+    pub fn requireSignIn(m: *Model) Allocator.Error!void {
+        m.authentication_required = true;
+        if (!m.sign_in_enabled or m.busy != null or m.authentication_prompted or m.sign_in_state == .running or m.sign_in_state == .refreshing) return;
+        if (m.targets.len > 0) try m.rememberRetry(m.targets, .activate, duration.parse(m.duration_text.text()) catch m.default_duration_min);
+        m.closeOverlay();
+        m.authentication_prompted = true;
+        m.sign_in_state = .required;
+        m.sign_in_error = null;
+        m.mode = .sign_in;
+    }
+
+    pub fn signInFailed(m: *Model, message: []const u8) void {
+        m.sign_in_state = .failed;
+        m.sign_in_code = null;
+        m.sign_in_error = .init(.failed, message);
+        m.refreshing = false;
+        m.mode = .sign_in;
+    }
+
+    pub fn signInComplete(m: *Model) void {
+        m.authentication_required = false;
+        m.authentication_prompted = false;
+        m.sign_in_state = .ready;
+        m.sign_in_code = null;
+        m.sign_in_error = null;
+        m.mode = .sign_in;
+        if (m.retry_intent) |intent| {
+            const wanted: rows_mod.State = if (intent == .activate) .eligible else .active;
+            var i: usize = 0;
+            while (i < m.selected.count()) {
+                const id = m.selected.keys()[i];
+                const retryable = for (m.rows) |row| {
+                    if (std.mem.eql(u8, row.eligibility.schedule_id, id) and row.state == wanted) break true;
+                } else false;
+                if (retryable) {
+                    i += 1;
+                } else {
+                    m.gpa.free(id);
+                    m.selected.swapRemoveAt(i);
+                }
+            }
+        }
+    }
+
     pub fn setPageSize(m: *Model, n: usize) void {
         m.page_size = @max(1, n);
         m.ensureCursorVisible();
@@ -265,7 +335,7 @@ pub const Model = struct {
     /// Advances animations; returns whether the screen needs redrawing.
     pub fn tick(m: *Model) bool {
         m.ticks +%= 1;
-        const animating = m.progress_window and (m.busy != null or m.refreshing);
+        const animating = (m.progress_window and (m.busy != null or m.refreshing)) or m.sign_in_state == .running or m.sign_in_state == .refreshing;
         return animating or m.ticks % ticks_per_second == 0;
     }
 
@@ -274,11 +344,24 @@ pub const Model = struct {
     pub fn update(m: *Model, input: Input) Allocator.Error!Effect {
         if (input == .quit) return .quit;
         m.notice = null;
+        if (input == .sign_in) {
+            if (!m.sign_in_enabled) return .none;
+            if (m.busy != null) return m.showBusy();
+            if (m.sign_in_state != .running and m.sign_in_state != .refreshing) {
+                m.sign_in_state = .required;
+                m.sign_in_error = null;
+                if (m.targets.len > 0) try m.rememberRetry(m.targets, .activate, duration.parse(m.duration_text.text()) catch m.default_duration_min);
+                m.closeOverlay();
+            }
+            m.mode = .sign_in;
+            return .none;
+        }
         return switch (m.mode) {
             .browse => m.updateBrowse(input),
             .form => m.updateForm(input),
             .confirm_deactivate => m.updateConfirm(input),
             .progress => m.updateProgress(input),
+            .sign_in => m.updateSignIn(input),
         };
     }
 
@@ -316,6 +399,7 @@ pub const Model = struct {
                 } else return .quit;
             },
             .quit => unreachable,
+            .sign_in => unreachable,
         }
         return .none;
     }
@@ -358,6 +442,42 @@ pub const Model = struct {
     /// The operation keeps running; escape only hides its progress view.
     fn updateProgress(m: *Model, input: Input) Effect {
         if (input == .escape) m.mode = .browse;
+        return .none;
+    }
+
+    fn updateSignIn(m: *Model, input: Input) Allocator.Error!Effect {
+        if (input == .escape) {
+            const running = m.sign_in_state == .running or m.sign_in_state == .refreshing;
+            m.sign_in_state = .required;
+            m.sign_in_code = null;
+            m.mode = .browse;
+            return if (running) .cancel_sign_in else .none;
+        }
+        if (m.sign_in_state == .ready) {
+            if (input == .enter) {
+                m.mode = .browse;
+                if (m.retry_intent) |intent| {
+                    m.retry_intent = null;
+                    if (m.selected.count() == 0) return .none;
+                    if (intent == .deactivate) return m.beginDeactivate();
+                    const effect = try m.beginActivate();
+                    if (effect == .load_policies) if (m.retry_duration_min) |minutes| {
+                        var buf: [16]u8 = undefined;
+                        m.duration_text.set(duration.formatHuman(minutes, &buf));
+                    };
+                    return effect;
+                }
+            }
+            return .none;
+        }
+        if (m.sign_in_state == .refreshing) return .none;
+        const device = input == .text and std.ascii.eqlIgnoreCase(input.text, "d");
+        if (device or (input == .enter and m.sign_in_state != .running)) {
+            m.sign_in_state = .running;
+            m.sign_in_code = null;
+            m.sign_in_error = null;
+            return .{ .sign_in = if (device) .device_code else .browser };
+        }
         return .none;
     }
 
@@ -564,7 +684,7 @@ fn freeEffect(effect: Effect) void {
             testing.allocator.free(job.targets);
             testing.allocator.free(job.justification);
         },
-        .none, .quit, .refresh => {},
+        .none, .quit, .refresh, .sign_in, .cancel_sign_in => {},
     }
 }
 
@@ -715,6 +835,104 @@ test "busy operations block new ones" {
     m.busy = "Activating";
     try testing.expectEqual(Effect.none, try press(&m, .enter));
     try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "Azure sign-in is unavailable unless explicitly enabled" {
+    var m = try loaded();
+    defer m.deinit();
+    try m.requireSignIn();
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expectEqual(Effect.none, try press(&m, .sign_in));
+    try testing.expectEqual(Mode.browse, m.mode);
+}
+
+test "sign-in requires an explicit action and supports device fallback and cancellation" {
+    var m = try loaded();
+    defer m.deinit();
+    m.sign_in_enabled = true;
+    try m.requireSignIn();
+    try testing.expectEqual(Mode.sign_in, m.mode);
+    try testing.expectEqual(SignInState.required, m.sign_in_state);
+    try testing.expectEqual(azure_login.Method.browser, (try press(&m, .enter)).sign_in);
+    try testing.expectEqual(SignInState.running, m.sign_in_state);
+    try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(azure_login.Method.device_code, (try press(&m, .{ .text = "d" })).sign_in);
+    try testing.expectEqual(Effect.cancel_sign_in, try press(&m, .escape));
+    try testing.expectEqual(Mode.browse, m.mode);
+    try m.requireSignIn();
+    try testing.expectEqual(Mode.browse, m.mode);
+    _ = try press(&m, .sign_in);
+    m.signInFailed("Login was declined.");
+    try testing.expectEqualStrings("Login was declined.", m.sign_in_error.?.text());
+    try testing.expectEqual(azure_login.Method.browser, (try press(&m, .enter)).sign_in);
+}
+
+test "successful sign-in preserves only retryable roles and requires reviewing activation" {
+    var m = try loaded();
+    defer m.deinit();
+    m.sign_in_enabled = true;
+    try m.rememberRetry(&.{ fixture[0], fixture[1], fixture[3] }, .activate, 90);
+    m.justification.set("recover deployment");
+    try m.requireSignIn();
+    _ = try press(&m, .enter);
+    var refreshed = fixture;
+    refreshed[0].state = .active;
+    refreshed[1].state = .pending;
+    try m.setRows(&refreshed, 100);
+    m.signInComplete();
+    try testing.expectEqual(Mode.sign_in, m.mode);
+    try testing.expectEqual(SignInState.ready, m.sign_in_state);
+    try testing.expect(m.busy == null);
+    try testing.expectEqual(@as(usize, 1), m.selected.count());
+    try testing.expect(m.isSelected(fixture[3]));
+    const review = try press(&m, .enter);
+    defer freeEffect(review);
+    try testing.expectEqual(Mode.form, m.mode);
+    try testing.expectEqualStrings("e3", review.load_policies[0].eligibility.schedule_id);
+    try testing.expectEqualStrings("1h30m", m.duration_text.text());
+    try testing.expectEqualStrings("recover deployment", m.justification.text());
+    const submit = try press(&m, .enter);
+    defer freeEffect(submit);
+    try testing.expectEqual(@as(usize, 1), submit.activate.targets.len);
+}
+
+test "sign-in never falls back to activating a different role when no retry targets remain" {
+    var m = try loaded();
+    defer m.deinit();
+    m.sign_in_enabled = true;
+    try m.rememberRetry(fixture[0..1], .activate, 60);
+    var refreshed = fixture;
+    refreshed[0].state = .pending;
+    try m.setRows(&refreshed, 100);
+    m.signInComplete();
+    try testing.expectEqual(@as(usize, 0), m.selected.count());
+    try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expect(m.busy == null);
+}
+
+test "deactivation retry requires a new confirmation after sign-in" {
+    var m = try loaded();
+    defer m.deinit();
+    m.sign_in_enabled = true;
+    try m.rememberRetry(fixture[2..3], .deactivate, 0);
+    m.signInComplete();
+    try testing.expectEqual(Effect.none, try press(&m, .enter));
+    try testing.expectEqual(Mode.confirm_deactivate, m.mode);
+    const submit = try press(&m, .enter);
+    defer freeEffect(submit);
+    try testing.expectEqualStrings("a1", submit.deactivate[0].eligibility.schedule_id);
+}
+
+test "authentication errors do not interrupt a running role operation" {
+    var m = try loaded();
+    defer m.deinit();
+    m.sign_in_enabled = true;
+    m.busy = "Activating";
+    try m.requireSignIn();
+    try testing.expectEqual(Mode.browse, m.mode);
+    try testing.expectEqual(Effect.none, try press(&m, .sign_in));
+    try testing.expectEqualStrings("Activating", m.busy.?);
 }
 
 test "reopened picker restores background roles and can quit without clearing the operation" {

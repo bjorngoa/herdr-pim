@@ -14,6 +14,18 @@ pub const Error = service.GetError || activation.Error || std.Io.Writer.Error ||
     JustificationRequired,
 };
 
+pub fn needsSignIn(err: Error, diag: session_mod.Diagnostics) bool {
+    if (err == error.HttpFailed) {
+        if (diag.arm.status == .unauthorized) return true;
+        for ([_][]const u8{ "RoleAssignmentRequestAcrsValidationFailed", "ExpiredAuthenticationToken", "InvalidAuthenticationToken", "AuthenticationFailed" }) |code|
+            if (std.mem.eql(u8, diag.arm.code, code)) return true;
+    }
+    if (err != error.AzCliFailed) return false;
+    for ([_][]const u8{ "az login", "AADSTS700082", "AADSTS70043", "AADSTS50173", "AADSTS50076", "AADSTS50079", "interaction_required", "invalid_grant", "refresh token", "not logged in" }) |hint|
+        if (std.ascii.indexOfIgnoreCase(diag.az.stderr, hint) != null) return true;
+    return false;
+}
+
 pub fn report(w: *std.Io.Writer, err: Error, diag: session_mod.Diagnostics) std.Io.Writer.Error!void {
     switch (err) {
         error.NothingSelected, error.PartialFailure, error.WriteFailed => {},
@@ -115,4 +127,14 @@ test "summaryAlloc returns one line without prefix" {
         try summaryAlloc(arena, error.AzCliFailed, .{ .az = .{ .stderr = "second line" } }),
     );
     try testing.expectEqualStrings("PartialFailure", try summaryAlloc(arena, error.PartialFailure, .{}));
+}
+
+test "only authentication failures offer sign-in" {
+    try testing.expect(needsSignIn(error.AzCliFailed, .{ .az = .{ .stderr = "ERROR: Please run 'az login'." } }));
+    try testing.expect(needsSignIn(error.AzCliFailed, .{ .az = .{ .stderr = "AADSTS700082: expired refresh token" } }));
+    try testing.expect(needsSignIn(error.HttpFailed, .{ .arm = .{ .status = .unauthorized } }));
+    try testing.expect(needsSignIn(error.HttpFailed, .{ .arm = .{ .status = .forbidden, .code = "RoleAssignmentRequestAcrsValidationFailed" } }));
+    try testing.expect(!needsSignIn(error.HttpFailed, .{ .arm = .{ .status = .forbidden, .code = "AuthorizationFailed" } }));
+    try testing.expect(!needsSignIn(error.AzCliFailed, .{ .az = .{ .stderr = "Invalid CLI configuration" } }));
+    try testing.expect(!needsSignIn(error.TimedOut, .{}));
 }

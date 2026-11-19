@@ -148,6 +148,7 @@ fn runPicker(init: std.process.Init, session: *session_mod.Session, opts: args.P
         .default_duration_min = opts.duration_min,
         .initial_filter = filter,
         .progress_window = env.enabled(init.environ_map, env.progress_window),
+        .sign_in = env.enabled(init.environ_map, env.sign_in),
     }) catch |err| {
         stderr.print("pim: the picker failed ({t}).\n", .{err}) catch {};
         return exit_failure;
@@ -178,6 +179,7 @@ test {
     _ = @import("adapters/arm/dto.zig");
     _ = @import("adapters/arm/client.zig");
     _ = @import("adapters/azcli.zig");
+    _ = @import("adapters/azure_login.zig");
     _ = @import("adapters/snapshot_cache.zig");
     _ = @import("adapters/json_store.zig");
     _ = @import("adapters/herdr.zig");
